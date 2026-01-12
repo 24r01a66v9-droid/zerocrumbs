@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserRole, FoodListing, ListingStatus, Review } from './types';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
@@ -11,18 +11,49 @@ import ImpactPage from './pages/Impact';
 import Reviews from './pages/Reviews';
 import KitchenAssistant from './pages/KitchenAssistant';
 import SafetyScanner from './pages/SafetyScanner';
-import { MOCK_LISTINGS, IMPACT_MOCK, MOCK_REVIEWS } from './constants';
+import { db } from './db';
 import Logo from './components/Logo';
 
 const App: React.FC = () => {
   const [currentPath, setCurrentPath] = useState('home');
   const [user, setUser] = useState<{ name: string; role: UserRole; verified?: boolean } | null>(null);
-  const [listings, setListings] = useState<FoodListing[]>(MOCK_LISTINGS);
-  const [reviews, setReviews] = useState<Review[]>(MOCK_REVIEWS);
-  const [impact, setImpact] = useState(IMPACT_MOCK);
+  const [listings, setListings] = useState<FoodListing[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [dbHealth, setDbHealth] = useState<{ status: string; latency: number; engine: string }>({ status: 'connecting', latency: 0, engine: 'Detecting...' });
+  const [impact, setImpact] = useState({
+    mealsSaved: 0,
+    co2Reduced: 0,
+    waterSaved: 0,
+    peopleServed: 0
+  });
   const [notifications, setNotifications] = useState<any[]>([
-    { id: 'v1', text: "Welcome to ZeroCrumbs. Trust is our ingredient.", type: 'success', time: 'Recently' }
+    { id: 'v1', text: "ZeroCrumbs Network Initializing...", type: 'info', time: 'Recently' }
   ]);
+
+  // Connect to Database on Mount
+  useEffect(() => {
+    const initData = async () => {
+      // Check Connection First
+      const health = await db.checkConnection();
+      setDbHealth(health);
+      
+      if (health.status === 'connected') {
+        addNotification(`Database Online (${health.latency}ms). Synchronized.`, 'success');
+      } else {
+        addNotification(`Database Error: Storage blocked or unavailable.`, 'alert');
+      }
+
+      const [dbListings, dbReviews, dbImpact] = await Promise.all([
+        db.getListings(),
+        db.getReviews(),
+        db.getImpact()
+      ]);
+      setListings(dbListings);
+      setReviews(dbReviews);
+      setImpact(dbImpact);
+    };
+    initData();
+  }, []);
 
   const navigate = (path: string) => {
     setCurrentPath(path);
@@ -39,7 +70,7 @@ const App: React.FC = () => {
   const handleLogin = (userData: { name: string; role: UserRole }) => {
     setUser({ ...userData, verified: true });
     navigate('dashboard');
-    addNotification(`Logged in as ${userData.role}. Let's create impact.`, 'success');
+    addNotification(`Logged in as ${userData.role}. Session secured.`, 'success');
   };
 
   const handleLogout = () => {
@@ -47,42 +78,48 @@ const App: React.FC = () => {
     navigate('home');
   };
 
-  const handlePostSuccess = (foodName: string) => {
-    addNotification(`Surplus Food Posted: "${foodName}" is now live.`, 'success');
+  const handlePostSuccess = async (foodName: string) => {
+    const updatedListings = await db.getListings();
+    setListings(updatedListings);
+    addNotification(`Surplus Food Posted: "${foodName}" is now live in DB.`, 'success');
   };
 
-  const handleClaim = (listingId: string) => {
+  const handleClaim = async (listingId: string) => {
     if (!user) return;
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const listing = listings.find(l => l.id === listingId);
     
-    setListings(prev => prev.map(l => 
-      l.id === listingId 
-        ? { ...l, status: ListingStatus.CLAIMED, otp, claimedBy: user.name, claimedAt: new Date().toISOString() } 
-        : l
-    ));
+    const updated = await db.updateListing(listingId, {
+      status: ListingStatus.CLAIMED,
+      otp,
+      claimedBy: user.name,
+      claimedAt: new Date().toISOString()
+    });
+
+    setListings(prev => prev.map(l => l.id === listingId ? updated : l));
 
     if (user.role === UserRole.NGO) {
-      addNotification(`Claimed: ${listing?.name}. Use OTP ${otp} at pickup.`, 'alert');
+      addNotification(`Claimed: ${updated.name}. Record persisted.`, 'alert');
     }
     navigate('dashboard');
   };
 
-  const handleAddReview = (newReview: Review) => {
+  const handleAddReview = async (newReview: Review) => {
+    await db.addReview(newReview);
     setReviews(prev => [newReview, ...prev]);
-    addNotification("Review submitted! Thank you for the feedback.", "success");
+    addNotification("Review persisted to database! Thank you.", "success");
   };
 
-  const handleVerifyOTP = (listingId: string, otp: string) => {
+  const handleVerifyOTP = async (listingId: string, otp: string) => {
     const listing = listings.find(l => l.id === listingId);
     if (listing && (listing.otp === otp || otp === '000000')) {
-      setListings(prev => prev.map(l => 
-        l.id === listingId 
-          ? { ...l, status: ListingStatus.EXPIRED } 
-          : l
-      ));
-      setImpact(prev => ({ ...prev, mealsSaved: prev.mealsSaved + 12 }));
-      addNotification(`Handover Successful: ${listing.name}. Impact recorded!`, 'impact');
+      const updated = await db.updateListing(listingId, { status: ListingStatus.EXPIRED });
+      setListings(prev => prev.map(l => l.id === listingId ? updated : l));
+      
+      await db.incrementMealsSaved(listing.servings || 1);
+      const updatedImpact = await db.getImpact();
+      setImpact(updatedImpact);
+      
+      addNotification(`Handover Finalized: ${listing.name}. Impact synced.`, 'impact');
       return true;
     }
     return false;
@@ -103,7 +140,8 @@ const App: React.FC = () => {
           notifications={notifications}
           onVerifyOTP={handleVerifyOTP}
           onNavigate={navigate} 
-          onLogout={handleLogout} 
+          onLogout={handleLogout}
+          dbHealth={dbHealth}
         />
       ) : <Login onLogin={handleLogin} />;
       case 'post': return user?.role === UserRole.DONOR ? <PostFood onPostSuccess={handlePostSuccess} /> : <Login onLogin={handleLogin} />;
@@ -127,7 +165,7 @@ const App: React.FC = () => {
                 <span className="ml-4 text-3xl font-black tracking-tight text-charcoal">ZeroCrumbs.</span>
               </div>
               <p className="text-charcoal/40 font-medium leading-loose mb-10 text-lg max-w-sm">
-                The digital bridge between abundance and need. ZeroCrumbs ensures no plate goes empty.
+                A persistent digital ecosystem connecting surplus with community needs.
               </p>
             </div>
             <div className="md:col-span-7 grid grid-cols-2 md:grid-cols-3 gap-12">
@@ -143,6 +181,15 @@ const App: React.FC = () => {
                   <ul className="space-y-6">
                     <li><button onClick={() => navigate('safety')} className="text-charcoal/40 hover:text-terracotta font-black uppercase text-[10px]">AI Safety Scan</button></li>
                     <li><button onClick={() => navigate('kitchen')} className="text-charcoal/40 hover:text-terracotta font-black uppercase text-[10px]">Kitchen AI</button></li>
+                  </ul>
+               </div>
+               <div>
+                  <h5 className="font-black text-charcoal text-[10px] uppercase tracking-[0.3em] mb-10">System Status</h5>
+                  <ul className="space-y-6">
+                    <li className={`text-[10px] font-black uppercase flex items-center gap-2 ${dbHealth.status === 'connected' ? 'text-emerald-600' : 'text-red-500'}`}>
+                      <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${dbHealth.status === 'connected' ? 'bg-emerald-600' : 'bg-red-500'}`}></div>
+                      {dbHealth.status === 'connected' ? `DB Online (${dbHealth.latency}ms)` : 'DB Disconnected'}
+                    </li>
                   </ul>
                </div>
             </div>

@@ -5,7 +5,7 @@ import {
   Plus, History, ShieldCheck, MapPin, 
   Clock, Activity, ArrowUpRight, CheckCircle2, Users,
   LogOut, Smartphone, Heart, Search, Sparkles, TrendingUp,
-  Calendar, Thermometer, Check, X
+  Calendar, Thermometer, Check, X, Database, Zap
 } from 'lucide-react';
 import { getPredictiveInsights, calculateNutritionMatch } from '../geminiService';
 
@@ -16,9 +16,10 @@ interface DashboardProps {
   onVerifyOTP: (listingId: string, otp: string) => boolean;
   onNavigate: (path: string) => void;
   onLogout: () => void;
+  dbHealth?: { status: string; latency: number; engine: string };
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ user, listings, notifications, onVerifyOTP, onNavigate, onLogout }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, listings, notifications, onVerifyOTP, onNavigate, onLogout, dbHealth }) => {
   const [otpInputs, setOtpInputs] = useState<Record<string, string>>({});
   const [otpError, setOtpError] = useState<string | null>(null);
   const [insights, setInsights] = useState<PredictiveInsight[]>([]);
@@ -74,6 +75,43 @@ const Dashboard: React.FC<DashboardProps> = ({ user, listings, notifications, on
     }
   };
 
+  const renderSystemHealth = () => (
+    <div className="bg-white rounded-[3rem] p-10 border border-charcoal/5 shadow-xl mb-12">
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-sand rounded-xl flex items-center justify-center text-charcoal">
+            <Database size={20} />
+          </div>
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-widest text-charcoal/30">System Infrastructure</h3>
+            <p className="font-black text-charcoal">Database Connectivity</p>
+          </div>
+        </div>
+        <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${dbHealth?.status === 'connected' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+          <div className={`w-1.5 h-1.5 rounded-full ${dbHealth?.status === 'connected' ? 'bg-emerald-600 animate-pulse' : 'bg-red-600'}`}></div>
+          {dbHealth?.status === 'connected' ? 'Connected & Healthy' : 'Connection Error'}
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="p-6 bg-sand/30 rounded-2xl border border-charcoal/5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-charcoal/30 mb-2">Engine</p>
+          <p className="text-xs font-bold text-charcoal">{dbHealth?.engine || 'Detecting...'}</p>
+        </div>
+        <div className="p-6 bg-sand/30 rounded-2xl border border-charcoal/5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-charcoal/30 mb-2">Latency</p>
+          <p className="text-xs font-bold text-charcoal">{dbHealth?.latency || 0} ms (Round-trip)</p>
+        </div>
+        <div className="p-6 bg-sand/30 rounded-2xl border border-charcoal/5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-charcoal/30 mb-2">Sync Status</p>
+          <div className="flex items-center gap-2 text-xs font-bold text-emerald-600">
+             <Check size={14} /> Real-time Persistence Active
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderPredictiveForecast = () => (
     <div className="bg-charcoal text-white rounded-[3rem] p-10 shadow-2xl relative overflow-hidden group mb-12 border border-white/5">
       <div className="absolute top-0 right-0 p-8 text-terracotta opacity-10 group-hover:opacity-20 transition-opacity">
@@ -123,6 +161,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, listings, notifications, on
 
   const renderDonorDashboard = () => (
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {renderSystemHealth()}
       {renderPredictiveForecast()}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard label="Waste Prevented" value="240 kg" subValue="+18% vs last month" icon={<TrendingUp size={24} className="text-terracotta" />} trend="up" />
@@ -198,6 +237,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, listings, notifications, on
 
   const renderNGODashboard = () => (
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {renderSystemHealth()}
       {renderPredictiveForecast()}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
