@@ -1,11 +1,19 @@
 
+/// <reference types="vite/client" />
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { FoodCategory, FreshnessStatus, RecipientGroup, PredictiveInsight, NGORequirements, FoodListing } from "./types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
+
+if (!API_KEY) {
+  console.error("ZeroCrumbs: VITE_GEMINI_API_KEY is missing in .env file. AI features will be disabled.");
+}
 
 export const analyzeFoodImage = async (base64Image: string) => {
   try {
+    if (!ai) return null;
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: {
@@ -52,6 +60,7 @@ export const analyzeFoodImage = async (base64Image: string) => {
 
 export const searchNearbyFoodSupport = async (lat: number, lng: number) => {
   try {
+    if (!ai) return { text: "AI Unavailable", sources: [] };
     const response = await ai.models.generateContent({
       // Use gemini-2.5-flash for maps grounding as per guidelines for 2.5 series models.
       model: "gemini-2.5-flash",
@@ -68,7 +77,7 @@ export const searchNearbyFoodSupport = async (lat: number, lng: number) => {
 
     const text = response.text;
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    
+
     return { text, sources };
   } catch (error) {
     console.error("Google Maps Grounding Error:", error);
@@ -78,6 +87,7 @@ export const searchNearbyFoodSupport = async (lat: number, lng: number) => {
 
 export const calculateNutritionMatch = async (listing: FoodListing, requirements: NGORequirements) => {
   try {
+    if (!ai) return { matchPercentage: 0, matchReason: "AI Unavailable" };
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Compare this food listing with these NGO requirements. 
@@ -105,6 +115,7 @@ export const calculateNutritionMatch = async (listing: FoodListing, requirements
 
 export const getPredictiveInsights = async (userType: string): Promise<PredictiveInsight[]> => {
   try {
+    if (!ai) throw new Error("AI Unavailable");
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Generate 2 specific, realistic predictive waste insights for a ${userType} in a food-waste reduction platform. 
@@ -130,11 +141,11 @@ export const getPredictiveInsights = async (userType: string): Promise<Predictiv
     return JSON.parse(response.text || "[]");
   } catch (error) {
     return [
-      { 
-        title: "Seasonality Alert", 
-        description: "Upcoming local festivities usually lead to a 20% increase in surplus cooked meals.", 
-        type: "ALERT", 
-        impactLevel: "MEDIUM" 
+      {
+        title: "Seasonality Alert",
+        description: "Upcoming local festivities usually lead to a 20% increase in surplus cooked meals.",
+        type: "ALERT",
+        impactLevel: "MEDIUM"
       }
     ];
   }
@@ -142,6 +153,7 @@ export const getPredictiveInsights = async (userType: string): Promise<Predictiv
 
 export const scanFoodSafety = async (base64Image: string) => {
   try {
+    if (!ai) return null;
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: {
@@ -175,6 +187,7 @@ export const scanFoodSafety = async (base64Image: string) => {
 
 export const getKitchenTips = async (foodItem: string) => {
   try {
+    if (!ai) return "AI tips unavailable.";
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `You are an expert chef focused on zero-waste community cooking. I have a surplus of "${foodItem}". Provide: 
@@ -191,6 +204,7 @@ export const getKitchenTips = async (foodItem: string) => {
 
 export const getSustainabilityFact = async () => {
   try {
+    if (!ai) throw new Error("AI Unavailable");
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: "Tell me one surprising, short fact about food waste and its environmental impact. Keep it under 20 words.",
